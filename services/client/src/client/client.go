@@ -1,7 +1,10 @@
 package client
 
 import (
+	"bufio"
+	"fmt"
 	"net"
+	"os"
 	"time"
 
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/logger"
@@ -19,6 +22,8 @@ type ClientConfig struct {
 	ServerHost string
 	ServerPort string
 	AgencyId   string
+	InputFile  string
+	OutputFile string
 }
 
 type Client struct {
@@ -59,34 +64,80 @@ func connectToServer(host, port string) (net.Conn, error) {
 }
 
 func (client *Client) Run() error {
-	const mainAction = "test-echo-server"
 	defer client.conn.Close()
 
-	for messageId := range ECHO_CLIENT_MESSAGE_AMOUNT {
-		messageArgs := []any{"agency-id", client.config.AgencyId, "message-id", messageId}
-		logger.Info(mainAction, logger.InProgress, messageArgs...)
+	//abro archivo input
+	inputFile, err := os.Open(client.config.InputFile)
+	if err != nil { return err }
+	defer inputFile.Close()
 
-		clientMessage := client.config.AgencyId
+	//abro/creo archivo output
+	outputFile, err := os.Create(client.config.OutputFile)
+	if err != nil {return err}
+	defer outputFile.Close()
 
-		if err := safe_socket.SendAll(client.conn, []byte(clientMessage)); err != nil {
-			logger.Error("send-message", logger.Fail, messageArgs...)
-			return err
-		}
+	scanner := bufio.NewScanner(inputFile)
 
-		responseBuffer, err := safe_socket.RecvAll(client.conn, ECHO_CLIENT_BUFFER_SIZE)
-		if err != nil {
-			logger.Error("recv-response", logger.Fail, messageArgs...)
-			return err
-		}
+	//proceso linea por linea
+	for scanner.Scan() {
+		line := scanner.Text()
+        if len(line) == 0 {
+            continue
+        }
 
-		if string(responseBuffer) != clientMessage {
-			logger.Error("check-response", logger.Fail, messageArgs...)
-			return err
-		}
+		//envio al server
+		if err := safe_socket.SendAll(client.conn, []byte(line)); err != nil {
+            return fmt.Errorf("error al enviar mensaje: %w", err)
+        }
 
-		time.Sleep(ECHO_CLIENT_MESSAGE_DELAY_MS * time.Millisecond)
+		//recibo respuesta
+		responseBuffer, err := safe_socket.RecvAll(client.conn, len(line))
+        if err != nil {
+            return fmt.Errorf("error al recibir respuesta: %w", err)
+        }
+
+		//escribo en output la respuesta
+		if _, err := outputFile.WriteString(string(responseBuffer) + "\n"); err != nil {
+            return fmt.Errorf("error al escribir en output file: %w", err)
+        }
 	}
-	logger.Info(mainAction, logger.Success, "agency-id", client.config.AgencyId)
 
+	if err := scanner.Err(); err != nil {
+			return fmt.Errorf("error leyendo input file: %w", err)
+		}
+		
 	return nil
 }
+
+// func (client *Client) Run() error {
+// 	const mainAction = "test-echo-server"
+// 	defer client.conn.Close()
+
+// 	for messageId := range ECHO_CLIENT_MESSAGE_AMOUNT {
+// 		messageArgs := []any{"agency-id", client.config.AgencyId, "message-id", messageId}
+// 		logger.Info(mainAction, logger.InProgress, messageArgs...)
+
+// 		clientMessage := client.config.AgencyId
+
+// 		if err := safe_socket.SendAll(client.conn, []byte(clientMessage)); err != nil {
+// 			logger.Error("send-message", logger.Fail, messageArgs...)
+// 			return err
+// 		}
+
+// 		responseBuffer, err := safe_socket.RecvAll(client.conn, ECHO_CLIENT_BUFFER_SIZE)
+// 		if err != nil {
+// 			logger.Error("recv-response", logger.Fail, messageArgs...)
+// 			return err
+// 		}
+
+// 		if string(responseBuffer) != clientMessage {
+// 			logger.Error("check-response", logger.Fail, messageArgs...)
+// 			return err
+// 		}
+
+// 		time.Sleep(ECHO_CLIENT_MESSAGE_DELAY_MS * time.Millisecond)
+// 	}
+// 	logger.Info(mainAction, logger.Success, "agency-id", client.config.AgencyId)
+
+// 	return nil
+// }
