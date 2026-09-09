@@ -1,39 +1,51 @@
 import socket
 import logger
-import safe_socket
-
-_ECHO_SERVER_MESSAGE_SIZE = 1024
+from protocol.server_protocol import ServerProtocol, SEND_BET, GET_WINNERS, EXIT
+from lottery import Lottery
+import traceback
 
 
 class Server:
-    def __init__(self, server_host: str, server_port: int) -> None:
+    def __init__(self, server_host: str, server_port: int, storage_path: str = "bets.csv") -> None:
         self.server_host = server_host
         self.server_port = server_port
+        self.lottery = Lottery(storage_path)
 
     def _handle_client(self, client_socket):
         action = "handle-client"
-        message_amount = 0
+        protocol = ServerProtocol(client_socket)
+        bets_received = 0
         try:
-            logger.info(action, logger.LogResult.in_progress)
             while True:
-                client_message = safe_socket.recv_all(
-                    client_socket, _ECHO_SERVER_MESSAGE_SIZE
-                )
-                if not client_message:
-                    logger.info(
-                        action,
-                        logger.LogResult.success,
-                        "messages-amount",
-                        message_amount,
-                    )
-                    return
-                message_amount += 1
-                safe_socket.send_all(client_socket, client_message)
+                code = protocol.receive_action_code()
+
+                if code == EXIT:
+                    break
+
+                if code == SEND_BET:
+                    bet = protocol.receive_bet()
+                    self.lottery.store_bets([bet])
+                    bets_received += 1
+
+                elif code == GET_WINNERS:
+                    # guardo a el/los ganador por su dni
+                    winners = [
+                        str(b.document)
+                        for b in self.lottery.load_bets()
+                        if self.lottery.has_won(b)
+                    ]
+
+                    protocol.send_winners(winners)
+                    break
+                else:
+                    break
+
+            logger.info(action, logger.LogResult.success, "bets", bets_received)
+
         except Exception as e:
-            logger.error(
-                action, logger.LogResult.fail, "messages-amount", message_amount
-            )
-            raise e
+            logger.error(action, logger.LogResult.fail, "error", str(e))
+        finally:
+            protocol.close()
 
     def run(self):
         action = "accept-connection"

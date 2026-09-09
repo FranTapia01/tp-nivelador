@@ -1,0 +1,15 @@
+client_1  | 2026/09/05 20:06:39 INFO action=connect-to-server result=in-progress
+client_1  | 2026/09/05 20:06:39 WARN action=connect-to-server result=fail attempt=0
+client_1  | 2026/09/05 20:06:40 INFO action=connect-to-server result=success
+client_0  | 2026/09/05 20:06:39 INFO action=connect-to-server result=in-progress
+client_0  | 2026/09/05 20:06:39 WARN action=connect-to-server result=fail attempt=0
+client_0  | 2026/09/05 20:06:40 INFO action=connect-to-server result=success
+server    | 2026/09/05 20:06:39 INFO action=accept-connection result=in-progress 
+server    | 2026/09/05 20:06:40 INFO action=accept-connection result=success 
+server    | 2026/09/05 20:06:40 INFO action=handle-client result=in-progress 
+server    | 2026/09/05 20:06:40 INFO action=handle-client result=success messages-amount=26936
+server    | 2026/09/05 20:06:40 INFO action=accept-connection result=in-progress 
+server    | 2026/09/05 20:06:40 INFO action=accept-connection result=success 
+server    | 2026/09/05 20:06:40 INFO action=handle-client result=in-progress 
+server    | 2026/09/05 20:06:40 INFO action=handle-client result=success messages-amount=5
+server    | 2026/09/05 20:06:40 INFO action=accept-connection result=in-progress 

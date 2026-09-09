@@ -5,18 +5,15 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/logger"
-	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/safe_socket"
+	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/protocol"
 )
 
 const CONNECTION_ATTEMPTS_MAX = 3
 const CONNECTION_ATTEMPS_DELAY_MS = 200
-
-const ECHO_CLIENT_BUFFER_SIZE = 512
-const ECHO_CLIENT_MESSAGE_AMOUNT = 3
-const ECHO_CLIENT_MESSAGE_DELAY_MS = 1000
 
 type ClientConfig struct {
 	ServerHost string
@@ -66,6 +63,15 @@ func connectToServer(host, port string) (net.Conn, error) {
 func (client *Client) Run() error {
 	defer client.conn.Close()
 
+	// Parseamos el AgencyId a uint16 para el protocolo
+	agencyIDNum, err := strconv.ParseUint(client.config.AgencyId, 10, 16)
+	if err != nil {
+		return fmt.Errorf("error parseando AgencyId: %w", err)
+	}
+
+	// Instancio el protocolo sobre la conexion existente
+	protocol := protocol.NewClientProtocol(client.conn)
+
 	//abro archivo input
 	inputFile, err := os.Open(client.config.InputFile)
 	if err != nil { return err }
@@ -78,66 +84,42 @@ func (client *Client) Run() error {
 
 	scanner := bufio.NewScanner(inputFile)
 
-	//proceso linea por linea
+	// Enviar todas las apuestas línea por línea
 	for scanner.Scan() {
 		line := scanner.Text()
-        if len(line) == 0 {
-            continue
-        }
+		if len(line) == 0 {
+			continue
+		}
 
-		//envio al server
-		if err := safe_socket.SendAll(client.conn, []byte(line)); err != nil {
-            return fmt.Errorf("error al enviar mensaje: %w", err)
-        }
-
-		//recibo respuesta
-		responseBuffer, err := safe_socket.RecvAll(client.conn, len(line))
-        if err != nil {
-            return fmt.Errorf("error al recibir respuesta: %w", err)
-        }
-
-		//escribo en output la respuesta
-		if _, err := outputFile.WriteString(string(responseBuffer) + "\n"); err != nil {
-            return fmt.Errorf("error al escribir en output file: %w", err)
-        }
+		if err := protocol.SendBet(uint16(agencyIDNum), line); err != nil {
+			return fmt.Errorf("error al enviar apuesta: %w", err)
+		}
 	}
 
 	if err := scanner.Err(); err != nil {
 			return fmt.Errorf("error leyendo input file: %w", err)
 		}
+
+	// Solicitar los ganadores
+	if err := protocol.GetWinners(); err != nil {
+		return fmt.Errorf("error solicitando ganadores: %w", err)
+	}
+
+	// Recibir la lista de ganadores
+	winners, err := protocol.ReceiveWinners()
+	if err != nil {
+		return fmt.Errorf("error recibiendo ganadores: %w", err)
+	}
+
+	// Escribir cada ganador recibido en el OutputFile
+	for _, winnerDoc := range winners {
+		if _, err := outputFile.WriteString(winnerDoc + "\n"); err != nil {
+			return fmt.Errorf("error escribiendo en output file: %w", err)
+		}
+	}
+
+	// Notificar fin de comunicación
+	_ = protocol.SendExit()
 		
 	return nil
 }
-
-// func (client *Client) Run() error {
-// 	const mainAction = "test-echo-server"
-// 	defer client.conn.Close()
-
-// 	for messageId := range ECHO_CLIENT_MESSAGE_AMOUNT {
-// 		messageArgs := []any{"agency-id", client.config.AgencyId, "message-id", messageId}
-// 		logger.Info(mainAction, logger.InProgress, messageArgs...)
-
-// 		clientMessage := client.config.AgencyId
-
-// 		if err := safe_socket.SendAll(client.conn, []byte(clientMessage)); err != nil {
-// 			logger.Error("send-message", logger.Fail, messageArgs...)
-// 			return err
-// 		}
-
-// 		responseBuffer, err := safe_socket.RecvAll(client.conn, ECHO_CLIENT_BUFFER_SIZE)
-// 		if err != nil {
-// 			logger.Error("recv-response", logger.Fail, messageArgs...)
-// 			return err
-// 		}
-
-// 		if string(responseBuffer) != clientMessage {
-// 			logger.Error("check-response", logger.Fail, messageArgs...)
-// 			return err
-// 		}
-
-// 		time.Sleep(ECHO_CLIENT_MESSAGE_DELAY_MS * time.Millisecond)
-// 	}
-// 	logger.Info(mainAction, logger.Success, "agency-id", client.config.AgencyId)
-
-// 	return nil
-// }

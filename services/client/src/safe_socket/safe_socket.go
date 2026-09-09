@@ -1,22 +1,42 @@
 package safe_socket
 
-import "io"
+import (
+	"errors"
+	"io"
+)
 
-//TODO: Complete with a short-read/short-write tolerant implementation
+var ErrUnexpectedEOF = errors.New("unexpected EOF: socket closed during transfer")
 
 func SendAll(socket io.Writer, bytes []byte) error {
-	_, err := socket.Write(bytes)
-	if err != nil {
-		return err
+	totalSent := 0
+	for totalSent < len(bytes) {
+		n, err := socket.Write(bytes[totalSent:])
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return ErrUnexpectedEOF
+		}
+		totalSent += n
 	}
 	return nil
 }
 
 func RecvAll(socket io.Reader, size int) ([]byte, error) {
 	buff := make([]byte, size)
-	n, err := socket.Read(buff)
-	if err != nil {
-		return nil, err
+	totalRead := 0
+
+	for totalRead < size {
+		n, err := socket.Read(buff[totalRead:])
+		if n > 0 {
+			totalRead += n
+		}
+		if err != nil {
+			if errors.Is(err, io.EOF) && totalRead < size {
+				return nil, ErrUnexpectedEOF
+			}
+			return nil, err
+		}
 	}
-	return buff[:n], nil
+	return buff, nil
 }
