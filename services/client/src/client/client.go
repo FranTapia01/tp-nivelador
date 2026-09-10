@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/signal"
 	"strconv"
+	"syscall"
 	"time"
 
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/logger"
@@ -63,6 +65,16 @@ func connectToServer(host, port string) (net.Conn, error) {
 
 func (client *Client) Run() error {
 	defer client.conn.Close()
+
+	// Canal para atrapar SIGTERM / SIGINT
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT)
+
+	// Goroutine que escucha la señal y cancela la conexión activa
+	go func() {
+		<-sigChan
+		client.conn.Close()
+	}()
 
 	// parseo el AgencyId a uint16 para el protocolo
 	agencyIDNum, err := strconv.ParseUint(client.config.AgencyId, 10, 16)
