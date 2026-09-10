@@ -4,10 +4,12 @@ from safe_socket import recv_all, send_all
 from lottery import Bet
 
 # Opcodes (1 byte)
-SEND_BET = 0x01
-GET_WINNERS = 0x02
-SEND_WINNERS = 0x03
-EXIT = 0x00
+CODE_SEND_BATCH = 0x01
+CODE_GET_WINNERS = 0x02
+CODE_SEND_WINNERS = 0x03
+CODE_LAST_BATCH = 0x04
+CODE_ACK = 0x05
+CODE_EXIT = 0x00
 
 class ServerProtocol:
     def __init__(self, skt: socket.socket):
@@ -18,28 +20,40 @@ class ServerProtocol:
         bytes_received = recv_all(self.skt, 1)
         return bytes_received[0]
 
-    def receive_bet(self) -> Bet:
+    def receive_batch(self) -> list[Bet]:
         """
-        Recibe una apuesta del cliente
-        - Header de 6 bytes: Agency ID (uint16) + Payload Len (uint32)
-        - Payload: contenido string
+        Lee:
+        - Agency ID (uint16) + Cantidad de apuestas (uint16) -> 4 bytes
+        - Por cada apuesta: largo (uint16) + CSV bytes
         """
-        header = recv_all(self.skt, 6)
-        # desempaqueta los bytes, !->Bgendian H->Short(2B) I->Integer(4B)
-        agency_id, payload_len = struct.unpack("!HI", header) 
+        header = recv_all(self.skt, 4)
+        agency_id, count = struct.unpack("!HH", header)
 
-        payload_bytes = recv_all(self.skt, payload_len)
-        csv_str = payload_bytes.decode("utf-8")
+        bets = []
+        for _ in range(count):
+            len_buf = recv_all(self.skt, 2)
+            payload_len = struct.unpack("!H", len_buf)[0]
 
-        fields = [f.strip() for f in csv_str.split(",")]
-        return Bet(
-            agency_id=int(agency_id),
-            first_name=fields[0],
-            last_name=fields[1],
-            document=int(fields[2]),
-            birthdate=fields[3],
-            number=int(fields[4]),
-        )
+            csv_bytes = recv_all(self.skt, payload_len)
+            csv_str = csv_bytes.decode("utf-8")
+
+            fields = [f.strip() for f in csv_str.split(",")]
+            bets.append(
+                Bet(
+                    agency_id=int(agency_id),
+                    first_name=fields[0],
+                    last_name=fields[1],
+                    document=int(fields[2]),
+                    birthdate=fields[3],
+                    number=int(fields[4]),
+                )
+            )
+        return bets
+
+    def send_ack(self):
+        """Envía el byte de confirmación del batch."""
+        send_all(self.skt, bytes([CODE_ACK]))
+
 
     def receive_agency_id(self) -> int:
         """Recibe el ID de la agencia en una consulta (2 bytes Big Endian)"""
@@ -54,7 +68,7 @@ class ServerProtocol:
         - Por cada ganador: largo del payload (2B) + bytes del payload
         """
         # Opcode + Cantidad de ganadores
-        header = struct.pack("!BH", SEND_WINNERS, len(winners))
+        header = struct.pack("!BH", CODE_SEND_WINNERS, len(winners))
         send_all(self.skt, header)
 
         for winner in winners:

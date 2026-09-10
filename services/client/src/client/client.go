@@ -21,6 +21,7 @@ type ClientConfig struct {
 	AgencyId   string
 	InputFile  string
 	OutputFile string
+	BatchSize  int
 }
 
 type Client struct {
@@ -63,7 +64,7 @@ func connectToServer(host, port string) (net.Conn, error) {
 func (client *Client) Run() error {
 	defer client.conn.Close()
 
-	// Parseamos el AgencyId a uint16 para el protocolo
+	// parseo el AgencyId a uint16 para el protocolo
 	agencyIDNum, err := strconv.ParseUint(client.config.AgencyId, 10, 16)
 	if err != nil {
 		return fmt.Errorf("error parseando AgencyId: %w", err)
@@ -84,6 +85,8 @@ func (client *Client) Run() error {
 
 	scanner := bufio.NewScanner(inputFile)
 
+	batch := make([]string, 0, client.config.BatchSize)
+
 	// Enviar todas las apuestas línea por línea
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -91,10 +94,27 @@ func (client *Client) Run() error {
 			continue
 		}
 
-		if err := protocol.SendBet(uint16(agencyIDNum), line); err != nil {
-			return fmt.Errorf("error al enviar apuesta: %w", err)
-		}
+		batch = append(batch, line)
+
+		if len(batch) >= client.config.BatchSize {
+            if err := protocol.SendBatch(uint16(agencyIDNum), batch); err != nil {
+                return fmt.Errorf("error enviando batch: %w", err)
+            }
+            batch = batch[:0] // Limpiar buffer reutilizando memoria
+        }
 	}
+
+	// Enviar remanente si quedaron apuestas que no completaron un batch entero
+    if len(batch) > 0 {
+        if err := protocol.SendBatch(uint16(agencyIDNum), batch); err != nil {
+            return fmt.Errorf("error enviando último batch: %w", err)
+        }
+    }
+
+
+	if err := protocol.SendCodeLastBatch(uint16(agencyIDNum)); err != nil {
+			return fmt.Errorf("error al enviar aviso de ultimo batch: %w", err)
+		}
 
 	if err := scanner.Err(); err != nil {
 			return fmt.Errorf("error leyendo input file: %w", err)

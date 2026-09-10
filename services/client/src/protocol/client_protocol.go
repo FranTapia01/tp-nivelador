@@ -3,6 +3,7 @@ package protocol
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/safe_socket"
@@ -10,10 +11,13 @@ import (
 
 // Opcodes
 const (
-	SendBet     byte = 0x01
-	GetWinners  byte = 0x02
-	SendWinners byte = 0x03
-	Exit        byte = 0x00
+	// SendBet     byte = 0x01
+	CodeSendBatch   byte = 0x01
+	CodeGetWinners  byte = 0x02
+	CodeSendWinners byte = 0x03
+	CodeLastBatch   byte = 0x04
+	CodeAck         byte = 0x05
+	CodeExit        byte = 0x00
 )
 
 type ClientProtocol struct {
@@ -24,25 +28,57 @@ func NewClientProtocol(rw io.ReadWriter) *ClientProtocol {
 	return &ClientProtocol{rw: rw}
 }
 
-// SendBet envía: [Opcode (1B)][AgencyID (2B)][Len (4B)][Payload]
-func (p *ClientProtocol) SendBet(agencyID uint16, csvLine string) error {
-	payload := []byte(csvLine)
-	header := make([]byte, 1+2+4) // 7 bytes totales
+func (p *ClientProtocol) SendBatch(agencyID uint16, lines []string) error {
+    if len(lines) == 0 {
+        return nil
+    }
 
-	header[0] = SendBet
-	binary.BigEndian.PutUint16(header[1:3], agencyID)
-	binary.BigEndian.PutUint32(header[3:7], uint32(len(payload)))
+    // header: [Opcode (1B)][AgencyID (2B)][BatchCount (2B)]
+    header := make([]byte, 5)
+    header[0] = CodeSendBatch
+    binary.BigEndian.PutUint16(header[1:3], agencyID)
+    binary.BigEndian.PutUint16(header[3:5], uint16(len(lines)))
 
-	// mandamos el header y despues el payload
-	if err := safe_socket.SendAll(p.rw, header); err != nil {
-		return err
-	}
-	return safe_socket.SendAll(p.rw, payload)
+    if err := safe_socket.SendAll(p.rw, header); err != nil {
+        return err
+    }
+
+    // Enviar cada registro con su longitud
+    for _, line := range lines {
+        payload := []byte(line)
+        lenBuf := make([]byte, 2)
+        binary.BigEndian.PutUint16(lenBuf, uint16(len(payload)))
+
+        if err := safe_socket.SendAll(p.rw, lenBuf); err != nil {
+            return err
+        }
+        if err := safe_socket.SendAll(p.rw, payload); err != nil {
+            return err
+        }
+    }
+
+    // Esperar confirmación (ACK) del servidor
+    ackBuf, err := safe_socket.RecvAll(p.rw, 1)
+    if err != nil {
+        return fmt.Errorf("error esperando ACK: %w", err)
+    }
+    if ackBuf[0] != CodeAck {
+        return errors.New("el servidor no confirmó el procesamiento del batch")
+    }
+
+    return nil
+}
+
+func (p *ClientProtocol) SendCodeLastBatch(agencyID uint16) error {
+    buf := make([]byte, 3)
+    buf[0] = CodeLastBatch
+    binary.BigEndian.PutUint16(buf[1:3], agencyID)
+    return safe_socket.SendAll(p.rw, buf)
 }
 
 // RequestWinners solicita el ganador del sorteo enviando el opcode GET_WINNERS
 func (p *ClientProtocol) GetWinners() error {
-	header := []byte{GetWinners}
+	header := []byte{CodeGetWinners}
 	return safe_socket.SendAll(p.rw, header)
 }
 
@@ -55,7 +91,7 @@ func (p *ClientProtocol) ReceiveWinners() ([]string, error) {
 	}
 
 	opcode := header[0]
-	if opcode != SendWinners {
+	if opcode != CodeSendWinners {
 		return nil, errors.New("opcode de respuesta inesperado")
 	}
 
@@ -84,5 +120,5 @@ func (p *ClientProtocol) ReceiveWinners() ([]string, error) {
 
 // SendExit envía el opcode para avisar al servidor que finalizó la sesión
 func (p *ClientProtocol) SendExit() error {
-	return safe_socket.SendAll(p.rw, []byte{Exit})
+	return safe_socket.SendAll(p.rw, []byte{CodeExit})
 }
