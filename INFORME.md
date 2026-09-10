@@ -74,3 +74,9 @@ El sistema soporta interrupciones operativas asincrónicas asegurando la consist
   * Ante la llegada de `SIGTERM`, una goroutine cierra el socket asociado para desbloquear operaciones bloqueantes de entrada/salida.
   * Cada fase del bucle principal inspecciona la cancelación del contexto (`ctx.Err() != nil`).
   * En caso de interrupción externa, el proceso concluye de forma limpia retornando error nulo y finalizando con código de salida `0` conforme a las pautas de integración del entorno.
+
+---
+
+## 5. Consideraciones sobre el Entorno de Pruebas
+
+Para garantizar la correcta ejecución de la suite automatizada (`make test`), se deben tener en cuenta que,Dado que los tests de integración (en particular los de *batching*) levantan archivos `docker-compose` con configuraciones de red y puertos dedicados (`5678`), es imperativo que no existan servicios residuales ejecutándose previamente en el host. Si se utilizó `make up` para pruebas manuales, se debe ejecutar un `make down` previo a `make test` para liberar los puertos, evitar colisiones de contenedores huérfanos y prevenir la acumulación de datos o volúmenes no inicializados.
