@@ -67,8 +67,8 @@ func connectToServer(host, port string) (net.Conn, error) {
 func (client *Client) Run() error {
 	defer client.conn.Close()
 
-	// Contexto cancelado automáticamente ante SIGTERM o SIGINT
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	// Contexto cancelado automaticamente ante SIGTERM 
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM)
 	defer stop()
 
 	// Si se cancela el contexto por señal, cerramos el socket para destrabar I/O
@@ -86,12 +86,12 @@ func (client *Client) Run() error {
 	// Instancio el protocolo sobre la conexion existente
 	protocol := protocol.NewClientProtocol(client.conn)
 
-	//abro archivo input
+	// Abro archivo input
 	inputFile, err := os.Open(client.config.InputFile)
 	if err != nil { return err }
 	defer inputFile.Close()
 
-	//abro/creo archivo output
+	// Abro/creo archivo output
 	outputFile, err := os.Create(client.config.OutputFile)
 	if err != nil {return err}
 	defer outputFile.Close()
@@ -100,11 +100,11 @@ func (client *Client) Run() error {
 
 	batch := make([]string, 0, client.config.BatchSize)
 
-	// Enviar todas las apuestas línea por línea
+	// Enviar todas las apuestas
 	for scanner.Scan() {
 		// Chequear si fuimos interrumpidos por SIGTERM
 		if ctx.Err() != nil {
-			return nil // Salida limpia con código 0
+			return nil
 		}
 
 		line := scanner.Text()
@@ -117,7 +117,7 @@ func (client *Client) Run() error {
 		if len(batch) >= client.config.BatchSize {
             if err := protocol.SendBatch(uint16(agencyIDNum), batch); err != nil {
 				if ctx.Err() != nil {
-					return nil // Fue abortado por SIGTERM, salimos con éxito
+					return nil // Fue abortado por SIGTERM, salimos con exito
 				}
 				return fmt.Errorf("error enviando batch: %w", err)
             }
@@ -134,7 +134,6 @@ func (client *Client) Run() error {
             return fmt.Errorf("error enviando último batch: %w", err)
         }
     }
-
 
 	if err := protocol.SendCodeLastBatch(uint16(agencyIDNum)); err != nil {
 		if ctx.Err() != nil {

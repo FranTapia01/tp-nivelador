@@ -24,7 +24,6 @@ class Server:
         self.client_threads: list[threading.Thread] = []
 
         signal.signal(signal.SIGTERM, self._handle_signal)
-        # signal.signal(signal.SIGINT, self._handle_signal)
 
     def _handle_signal(self, *args):
         """Handler graceful ante SIGTERM"""
@@ -78,7 +77,7 @@ class Server:
                         current_agency_id = protocol.receive_agency_id()
 
                     with self.quorum_cv:
-                        # Si se apagó el servidor o se cumplió el quórum, salir de la espera
+                        # Si se apago el servidor o se cumplio el quorum, salir de la espera
                         while len(self.agencies_ready) < self.quorum_min and self.running:
                             self.quorum_cv.wait()
 

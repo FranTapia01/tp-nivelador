@@ -11,7 +11,6 @@ import (
 
 // Opcodes
 const (
-	// SendBet     byte = 0x01
 	CodeSendBatch   byte = 0x01
 	CodeGetWinners  byte = 0x02
 	CodeSendWinners byte = 0x03
@@ -33,14 +32,14 @@ func (p *ClientProtocol) SendBatch(agencyID uint16, lines []string) error {
         return nil
     }
 
-    // 1. Calcular el tamaño total exacto del payload para alocar una sola vez
+    // Calcular el tamaño total exacto del payload para alocar una sola vez
     // Header base: Opcode (1B) + AgencyID (2B) + BatchCount (2B) = 5B
     totalSize := 5
     for _, line := range lines {
         totalSize += 2 + len(line) // 2 bytes de longitud + contenido de la línea
     }
 
-    // 2. Construir el buffer contiguo
+    // Construir el buffer contiguo
     buf := make([]byte, totalSize)
     buf[0] = CodeSendBatch
     binary.BigEndian.PutUint16(buf[1:3], agencyID)
@@ -58,12 +57,12 @@ func (p *ClientProtocol) SendBatch(agencyID uint16, lines []string) error {
         offset += lineLen
     }
 
-    // 3. Enviar todo el lote consolidado en una sola operación de red
+    // Enviar todo el lote consolidado en una sola operacion de red
     if err := safe_socket.SendAll(p.rw, buf); err != nil {
         return err
     }
 
-    // 4. Esperar confirmación (ACK) del servidor
+    // Esperar confirmación (ACK) del servidor
     ackBuf, err := safe_socket.RecvAll(p.rw, 1)
     if err != nil {
         return fmt.Errorf("error esperando ACK: %w", err)
@@ -75,6 +74,7 @@ func (p *ClientProtocol) SendBatch(agencyID uint16, lines []string) error {
     return nil
 }
 
+// Avisa que ya se mandaron todas las bets
 func (p *ClientProtocol) SendCodeLastBatch(agencyID uint16) error {
     buf := make([]byte, 3)
     buf[0] = CodeLastBatch
@@ -82,13 +82,13 @@ func (p *ClientProtocol) SendCodeLastBatch(agencyID uint16) error {
     return safe_socket.SendAll(p.rw, buf)
 }
 
-// RequestWinners solicita el ganador del sorteo enviando el opcode GET_WINNERS
+// solicita el ganador del sorteo
 func (p *ClientProtocol) GetWinners() error {
 	header := []byte{CodeGetWinners}
 	return safe_socket.SendAll(p.rw, header)
 }
 
-// ReceiveWinners lee la respuesta del servidor con los DNI de los ganadores
+// Lee la respuesta del servidor con los ganadores
 func (p *ClientProtocol) ReceiveWinners() ([]string, error) {
 	// Header: Opcode (1B) + Cantidad de ganadores (2B) = 3 bytes
 	header, err := safe_socket.RecvAll(p.rw, 3)
@@ -105,26 +105,26 @@ func (p *ClientProtocol) ReceiveWinners() ([]string, error) {
 	winners := make([]string, 0, winnerCount)
 
 	for i := 0; i < int(winnerCount); i++ {
-		// Leer largo del DNI (uint16 -> 2 bytes)
+		// Leer largo (uint16 -> 2 bytes)
 		lenBuf, err := safe_socket.RecvAll(p.rw, 2)
 		if err != nil {
 			return nil, err
 		}
-		docLen := binary.BigEndian.Uint16(lenBuf)
+		lineLen := binary.BigEndian.Uint16(lenBuf)
 
-		// Leer los bytes del DNI
-		docBuf, err := safe_socket.RecvAll(p.rw, int(docLen))
+		// Leer los bytes de la linea
+		lineBuf, err := safe_socket.RecvAll(p.rw, int(lineLen))
 		if err != nil {
 			return nil, err
 		}
 
-		winners = append(winners, string(docBuf))
+		winners = append(winners, string(lineBuf))
 	}
 
 	return winners, nil
 }
 
-// SendExit envía el opcode para avisar al servidor que finalizó la sesión
+// Env0a el opcode para avisar al servidor que finalizó la sesión
 func (p *ClientProtocol) SendExit() error {
 	return safe_socket.SendAll(p.rw, []byte{CodeExit})
 }

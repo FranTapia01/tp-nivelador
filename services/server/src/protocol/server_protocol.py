@@ -24,7 +24,7 @@ class ServerProtocol:
         """
         Lee:
         - Agency ID (uint16) + Cantidad de apuestas (uint16) -> 4 bytes
-        - Por cada apuesta: largo (uint16) + CSV bytes
+        - Por cada apuesta: largo (uint16) + bytes
         """
         header = recv_all(self.skt, 4)
         agency_id, count = struct.unpack("!HH", header)
@@ -51,12 +51,11 @@ class ServerProtocol:
         return bets
 
     def send_ack(self):
-        """Envía el byte de confirmación del batch."""
+        """Envia el byte de confirmacion del batch"""
         send_all(self.skt, bytes([CODE_ACK]))
 
-
     def receive_agency_id(self) -> int:
-        """Recibe el ID de la agencia en una consulta (2 bytes Big Endian)"""
+        """Recibe el ID de la agencia en una consulta -> 2 bytes"""
         id_bytes = recv_all(self.skt, 2)
         return struct.unpack("!H", id_bytes)[0]
 
