@@ -14,9 +14,6 @@ func SendAll(socket io.Writer, bytes []byte) error {
 		if err != nil {
 			return err
 		}
-		if n == 0 {
-			return ErrUnexpectedEOF
-		}
 		totalSent += n
 	}
 	return nil

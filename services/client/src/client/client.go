@@ -2,6 +2,7 @@ package client
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"net"
 	"os"
@@ -66,13 +67,13 @@ func connectToServer(host, port string) (net.Conn, error) {
 func (client *Client) Run() error {
 	defer client.conn.Close()
 
-	// Canal para atrapar SIGTERM / SIGINT
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT)
+	// Contexto cancelado automáticamente ante SIGTERM o SIGINT
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer stop()
 
-	// Goroutine que escucha la señal y cancela la conexión activa
+	// Si se cancela el contexto por señal, cerramos el socket para destrabar I/O
 	go func() {
-		<-sigChan
+		<-ctx.Done()
 		client.conn.Close()
 	}()
 
@@ -101,6 +102,11 @@ func (client *Client) Run() error {
 
 	// Enviar todas las apuestas línea por línea
 	for scanner.Scan() {
+		// Chequear si fuimos interrumpidos por SIGTERM
+		if ctx.Err() != nil {
+			return nil // Salida limpia con código 0
+		}
+
 		line := scanner.Text()
 		if len(line) == 0 {
 			continue
@@ -110,7 +116,10 @@ func (client *Client) Run() error {
 
 		if len(batch) >= client.config.BatchSize {
             if err := protocol.SendBatch(uint16(agencyIDNum), batch); err != nil {
-                return fmt.Errorf("error enviando batch: %w", err)
+				if ctx.Err() != nil {
+					return nil // Fue abortado por SIGTERM, salimos con éxito
+				}
+				return fmt.Errorf("error enviando batch: %w", err)
             }
             batch = batch[:0] // Limpiar buffer reutilizando memoria
         }
@@ -119,27 +128,42 @@ func (client *Client) Run() error {
 	// Enviar remanente si quedaron apuestas que no completaron un batch entero
     if len(batch) > 0 {
         if err := protocol.SendBatch(uint16(agencyIDNum), batch); err != nil {
+			if ctx.Err() != nil {
+                return nil
+            }
             return fmt.Errorf("error enviando último batch: %w", err)
         }
     }
 
 
 	if err := protocol.SendCodeLastBatch(uint16(agencyIDNum)); err != nil {
-			return fmt.Errorf("error al enviar aviso de ultimo batch: %w", err)
-		}
+		if ctx.Err() != nil {
+            	return nil
+            }
+		return fmt.Errorf("error al enviar aviso de ultimo batch: %w", err)
+	}
 
 	if err := scanner.Err(); err != nil {
-			return fmt.Errorf("error leyendo input file: %w", err)
-		}
+		if ctx.Err() != nil {
+            return nil
+        }
+		return fmt.Errorf("error leyendo input file: %w", err)
+	}
 
 	// Solicitar los ganadores
 	if err := protocol.GetWinners(); err != nil {
+		if ctx.Err() != nil {
+            return nil
+        }
 		return fmt.Errorf("error solicitando ganadores: %w", err)
 	}
 
 	// Recibir la lista de ganadores
 	winners, err := protocol.ReceiveWinners()
 	if err != nil {
+		if ctx.Err() != nil {
+            return nil
+        }
 		return fmt.Errorf("error recibiendo ganadores: %w", err)
 	}
 

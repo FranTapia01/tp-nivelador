@@ -62,20 +62,21 @@ class ServerProtocol:
 
     def send_winners(self, winners: list[str]):
         """
-        Envia los ganadores:
+        Envia los ganadores en un único buffer consolidado:
         - Opcode (1B)
         - Cantidad de ganadores (2B)
         - Por cada ganador: largo del payload (2B) + bytes del payload
         """
-        # Opcode + Cantidad de ganadores
-        header = struct.pack("!BH", CODE_SEND_WINNERS, len(winners))
-        send_all(self.skt, header)
+        buf = bytearray()
+        # Header: Opcode (1B) + Cantidad de ganadores (2B)
+        buf.extend(struct.pack("!BH", CODE_SEND_WINNERS, len(winners)))
 
         for winner in winners:
             winner_bytes = winner.encode("utf-8")
-            # uint16 con el tamaño del packete + el payload
-            packet = struct.pack("!H", len(winner_bytes)) + winner_bytes
-            send_all(self.skt, packet)
+            buf.extend(struct.pack("!H", len(winner_bytes)))
+            buf.extend(winner_bytes)
+
+        send_all(self.skt, bytes(buf))
 
     def close(self):
         try:

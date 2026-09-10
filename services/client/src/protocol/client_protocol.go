@@ -33,31 +33,37 @@ func (p *ClientProtocol) SendBatch(agencyID uint16, lines []string) error {
         return nil
     }
 
-    // header: [Opcode (1B)][AgencyID (2B)][BatchCount (2B)]
-    header := make([]byte, 5)
-    header[0] = CodeSendBatch
-    binary.BigEndian.PutUint16(header[1:3], agencyID)
-    binary.BigEndian.PutUint16(header[3:5], uint16(len(lines)))
+    // 1. Calcular el tamaño total exacto del payload para alocar una sola vez
+    // Header base: Opcode (1B) + AgencyID (2B) + BatchCount (2B) = 5B
+    totalSize := 5
+    for _, line := range lines {
+        totalSize += 2 + len(line) // 2 bytes de longitud + contenido de la línea
+    }
 
-    if err := safe_socket.SendAll(p.rw, header); err != nil {
+    // 2. Construir el buffer contiguo
+    buf := make([]byte, totalSize)
+    buf[0] = CodeSendBatch
+    binary.BigEndian.PutUint16(buf[1:3], agencyID)
+    binary.BigEndian.PutUint16(buf[3:5], uint16(len(lines)))
+
+    offset := 5
+    for _, line := range lines {
+        lineBytes := []byte(line)
+        lineLen := len(lineBytes)
+
+        binary.BigEndian.PutUint16(buf[offset:offset+2], uint16(lineLen))
+        offset += 2
+
+        copy(buf[offset:offset+lineLen], lineBytes)
+        offset += lineLen
+    }
+
+    // 3. Enviar todo el lote consolidado en una sola operación de red
+    if err := safe_socket.SendAll(p.rw, buf); err != nil {
         return err
     }
 
-    // Enviar cada registro con su longitud
-    for _, line := range lines {
-        payload := []byte(line)
-        lenBuf := make([]byte, 2)
-        binary.BigEndian.PutUint16(lenBuf, uint16(len(payload)))
-
-        if err := safe_socket.SendAll(p.rw, lenBuf); err != nil {
-            return err
-        }
-        if err := safe_socket.SendAll(p.rw, payload); err != nil {
-            return err
-        }
-    }
-
-    // Esperar confirmación (ACK) del servidor
+    // 4. Esperar confirmación (ACK) del servidor
     ackBuf, err := safe_socket.RecvAll(p.rw, 1)
     if err != nil {
         return fmt.Errorf("error esperando ACK: %w", err)

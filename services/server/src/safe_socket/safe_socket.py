@@ -21,7 +21,5 @@ def send_all(socket: socket.socket, data: bytes):
     total_sent = 0
     while total_sent < len(data):
         sent = socket.send(data[total_sent:])
-        if sent == 0:
-            raise ConnectionClosedError("Socket connection closed during send")
 
         total_sent += sent
